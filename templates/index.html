@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Secure Question Paper Encryption</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background-color: #eaf6ff;
+      margin: 0;
+      padding: 40px;
+    }
+
+    h1 {
+      color: #222;
+      text-align: center;
+      margin-bottom: 30px;
+    }
+
+    form {
+      max-width: 600px;
+      margin: 0 auto 50px auto;
+      background: #ffffff;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    h2 {
+      font-size: 22px;
+      margin-bottom: 20px;
+      color: #333;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    label {
+      font-weight: 600;
+      margin-top: 15px;
+      display: block;
+      color: #444;
+    }
+
+    input[type="text"],
+    input[type="file"] {
+      width: 100%;
+      padding: 10px 14px;
+      margin-top: 8px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 15px;
+      box-sizing: border-box;
+      background-color: #fefefe;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      margin-top: 25px;
+      background-color: #007bff;
+      color: #fff;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    button:hover {
+      background-color: #0056b3;
+    }
+
+    .flash {
+      color: red;
+      text-align: center;
+      font-weight: bold;
+      margin-bottom: 20px;
+    }
+
+    .file-box {
+      border-radius: 10px;
+      padding: 15px;
+      margin-top: 20px;
+      font-family: sans-serif;
+      box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+    }
+
+    .file-box.encrypted {
+      background-color: #fff5e6;
+      border: 2px solid #f0ad4e;
+    }
+
+    .file-box.decrypted {
+      background-color: #e6fff2;
+      border: 2px solid #5cb85c;
+    }
+
+    .file-box h3 {
+      margin-top: 0;
+    }
+
+    .file-box a {
+      font-weight: bold;
+      text-decoration: none;
+      color: #333;
+    }
+
+    .file-box a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <h1>Secure Question Paper System</h1>
+
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      {% for message in messages %}
+        <div class="flash">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <!-- Encryption Form -->
+  <form method="POST" action="/encrypt" enctype="multipart/form-data">
+    <h2>🔐 Encrypt Question Paper</h2>
+
+    <label for="faculty_id">Enter Faculty ID:</label>
+    <input type="text" name="faculty_id" required>
+
+    <label for="input_file">Upload Question Paper (PDF/DOCX/MP3/ZIP):</label>
+    <input type="file" name="input_file" accept=".pdf,.doc,.docx,.mp3,.wav,.zip,.rar,.ppt,.pptx" required>
+
+    <button type="submit">Encrypt</button>
+  </form>
+
+  <!-- Encrypted File Display -->
+  {% if zip_file %}
+    <div class="file-box encrypted">
+      <h3>🔐 Encrypted File Ready:</h3>
+      <a href="{{ url_for('download_file', filename=zip_file) }}" download>{{ zip_file }}</a>
+    </div>
+  {% endif %}
+
+  <!-- Decryption Form -->
+  <form method="POST" action="/decrypt" enctype="multipart/form-data">
+    <h2>🔓 Decrypt Encrypted Folder</h2>
+
+    <label for="faculty_id">Enter Faculty ID:</label>
+    <input type="text" name="faculty_id" required>
+
+    <label for="encrypted_zip">Upload Encrypted ZIP:</label>
+    <input type="file" name="encrypted_zip" accept=".zip" required>
+
+    <button type="submit">Decrypt</button>
+  </form>
+
+  <!-- Decrypted Files Display -->
+{% if decrypted_files %}
+  <div style="margin-top: 20px;">
+    <h3>🔓 Decrypted Files:</h3>
+    <ul>
+      {% for file in decrypted_files %}
+        <li>
+          <a href="{{ url_for('download_decrypted_file', filename=file) }}" target="_blank">
+            {{ file }}
+          </a>
+        </li>
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+
+</body>
+</html>
