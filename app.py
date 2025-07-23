@@ -1,119 +1,156 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file
 import os
+import zipfile
+import hashlib
+from flask import Flask, request, send_file, render_template, flash, redirect
 from werkzeug.utils import secure_filename
-from utils.pipeline import encrypt_pipeline
-from utils.decryption_pipeline import decrypt_zip_file
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+from PIL import Image
+import numpy as np
+from utils.steganography import embed_file_in_image
+from utils.steg_image import extract_file_from_image
 
 app = Flask(__name__)
-app.secret_key = 'supersecretkey'
-
+app.secret_key = 'secret123'
 UPLOAD_FOLDER = 'uploads'
-DECRYPTED_FOLDER = 'decrypted'  # ✅ Added
-ALLOWED_EXTENSIONS = {'pdf', 'doc', 'docx', 'mp3', 'wav', 'zip', 'rar'}
-
+STEGO_FOLDER = 'stego_images'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(DECRYPTED_FOLDER, exist_ok=True)  # ✅ Ensure decrypted folder exists
+os.makedirs(STEGO_FOLDER, exist_ok=True)
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+# ============================
+# UTILITY FUNCTIONS
+# ============================
+
+def generate_key(faculty_id):
+    return hashlib.sha256(faculty_id.encode()).digest()
+
+def encrypt_file(file_path, key):
+    with open(file_path, 'rb') as f:
+        plaintext = f.read()
+    cipher = AES.new(key, AES.MODE_CBC)
+    iv = cipher.iv
+    ciphertext = cipher.encrypt(pad(plaintext, AES.block_size))
+    encrypted_data = iv + ciphertext
+    encrypted_path = file_path + '.enc'
+    with open(encrypted_path, 'wb') as f:
+        f.write(encrypted_data)
+    return encrypted_path
+
+def decrypt_file(encrypted_path, key, original_filename):
+    with open(encrypted_path, 'rb') as f:
+        data = f.read()
+    iv = data[:16]
+    ciphertext = data[16:]
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    plaintext = unpad(cipher.decrypt(ciphertext), AES.block_size)
+    decrypted_path = os.path.join(UPLOAD_FOLDER, f'decrypted_{original_filename}')
+    with open(decrypted_path, 'wb') as f:
+        f.write(plaintext)
+    return decrypted_path
+
+def hash_file(file_path):
+    sha = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        while chunk := f.read(8192):
+            sha.update(chunk)
+    return sha.hexdigest()
+
+# ============================
+# ROUTES
+# ============================
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
-@app.route('/encrypt', methods=['GET', 'POST'])
+@app.route('/encrypt', methods=['POST'])
 def encrypt():
-    if request.method == 'POST':
-        input_file = request.files.get('input_file')
-        faculty_id = request.form.get('faculty_id')
+    faculty_id = request.form['faculty_id']
+    question_paper = request.files['question_paper']
+    if question_paper.filename == '':
+        flash('No file selected')
+        return redirect('/')
 
-        if not input_file or not faculty_id:
-            flash("Please provide both faculty ID and a file.")
-            return render_template('index.html')
+    filename = secure_filename(question_paper.filename)
+    file_path = os.path.join(UPLOAD_FOLDER, filename)
+    question_paper.save(file_path)
 
-        input_path = os.path.join(UPLOAD_FOLDER, input_file.filename)
-        input_file.save(input_path)
+    key = generate_key(faculty_id)
+    encrypted_path = encrypt_file(file_path, key)
+    file_hash = hash_file(file_path)
 
-        cover_image_path = "static/default_cover.png"
-        output_stego_path = "stego_outputs/output.png"
+    zip_filename = os.path.join(UPLOAD_FOLDER, 'encrypted_package.zip')
+    with zipfile.ZipFile(zip_filename, 'w') as zipf:
+        zipf.write(encrypted_path, arcname='encrypted_question.enc')
+        with open(os.path.join(UPLOAD_FOLDER, 'key.txt'), 'w') as f:
+            f.write(faculty_id)
+        zipf.write(os.path.join(UPLOAD_FOLDER, 'key.txt'), arcname='key.txt')
+        with open(os.path.join(UPLOAD_FOLDER, 'hash.txt'), 'w') as f:
+            f.write(file_hash)
+        zipf.write(os.path.join(UPLOAD_FOLDER, 'hash.txt'), arcname='hash.txt')
+        with open(os.path.join(UPLOAD_FOLDER, 'meta.txt'), 'w') as f:
+            f.write(filename)
+        zipf.write(os.path.join(UPLOAD_FOLDER, 'meta.txt'), arcname='meta.txt')
 
-        try:
-            success, message, zip_path = encrypt_pipeline(
-                input_path, cover_image_path, output_stego_path, faculty_id
-            )
-        except Exception as e:
-            flash(f"Encryption pipeline error: {str(e)}")
-            return render_template('index.html')
+    flash('Encryption successful! Download the ZIP file.')
+    return send_file(zip_filename, as_attachment=True)
 
-        if success:
-            zip_filename = os.path.basename(zip_path)
-            flash("Encryption completed successfully!")
-            return render_template('index.html', zip_file=zip_filename)
-        else:
-            flash(f"Encryption failed: {message}")
-            return render_template('index.html')
+@app.route('/embed', methods=['POST'])
+def embed():
+    zip_file = request.files['zip_file']
+    cover_image = request.files['cover_image']
 
-    return render_template('index.html')
+    if not zip_file or not cover_image:
+        flash('Missing ZIP file or image')
+        return redirect('/')
 
-@app.route('/download/<filename>')
-def download_file(filename):
-    file_path = os.path.join('payload_zip', filename)
-    if os.path.exists(file_path):
-        return send_file(file_path, as_attachment=True)
-    else:
-        flash("File not found.")
-        return redirect(url_for('encrypt'))
+    zip_path = os.path.join(UPLOAD_FOLDER, secure_filename(zip_file.filename))
+    image_path = os.path.join(UPLOAD_FOLDER, secure_filename(cover_image.filename))
+    zip_file.save(zip_path)
+    cover_image.save(image_path)
 
-from flask import request, render_template, redirect, url_for, flash
-from werkzeug.utils import secure_filename
-import os
-from utils.decryption_pipeline import decrypt_zip_file  # ✅ Ensure this import works
-from config import UPLOAD_FOLDER
+    file_hash = hash_file(zip_path)
+    try:
+        stego_image_path = embed_file_in_image(zip_path, file_hash, image_path)
+    except Exception as e:
+        flash(f"Error embedding data: {str(e)}")
+        return redirect('/')
 
-@app.route('/decrypt', methods=['POST'])
-def decrypt():
-    encrypted_zip = request.files.get('encrypted_zip')
-    faculty_id = request.form.get('faculty_id')
+    flash('Data embedded successfully!')
+    return send_file(stego_image_path, as_attachment=True)
 
-    if not encrypted_zip or not faculty_id:
-        flash('Please provide both Faculty ID and a ZIP file.')
-        return redirect(url_for('index'))
+@app.route('/extract', methods=['POST'])
+def extract():
+    stego_image = request.files['stego_image']
+    faculty_id = request.form['faculty_id_decrypt']
 
-    filename = secure_filename(encrypted_zip.filename)
-    zip_path = os.path.join(UPLOAD_FOLDER, filename)
-    encrypted_zip.save(zip_path)
+    if not stego_image:
+        flash('No stego image uploaded')
+        return redirect('/')
+
+    image_path = os.path.join(UPLOAD_FOLDER, secure_filename(stego_image.filename))
+    stego_image.save(image_path)
 
     try:
-        output_files = decrypt_zip_file(zip_path, faculty_id)
-        
-        # ✅ Only send base filenames (e.g., "Q1.pdf", not full path)
-        file_names = [os.path.basename(f) for f in output_files]
+        zip_path, hash_value = extract_file_from_image(image_path)
 
-        flash(f"✅ Decryption successful. Extracted {len(file_names)} file(s).")
-        return render_template('index.html', decrypted_files=file_names)
+        with zipfile.ZipFile(zip_path, 'r') as zipf:
+            zipf.extractall(UPLOAD_FOLDER)
 
+        key = generate_key(faculty_id)
+        encrypted_path = os.path.join(UPLOAD_FOLDER, 'encrypted_question.enc')
+
+        meta_path = os.path.join(UPLOAD_FOLDER, 'meta.txt')
+        with open(meta_path, 'r') as f:
+            original_filename = f.read().strip()
+
+        decrypted_path = decrypt_file(encrypted_path, key, original_filename)
+
+        flash('Decryption successful! Download the file.')
+        return send_file(decrypted_path, as_attachment=True)
     except Exception as e:
-        flash(f"❌ Decryption failed: {str(e)}")
-        return redirect(url_for('index'))
-
-
-# ✅ New route to serve decrypted files
-from flask import send_from_directory
-from config import DECRYPTED_FOLDER
-
-@app.route('/download_decrypted/<filename>')
-def download_decrypted_file(filename):
-    file_path = os.path.join(DECRYPTED_FOLDER, filename)
-    if os.path.exists(file_path):
-        return send_from_directory(DECRYPTED_FOLDER, filename, as_attachment=True)
-    else:
-        flash("Decrypted file not found.")
-        return redirect(url_for('index'))
-
-
-
-
-
+        flash(f"Error during extraction or decryption: {str(e)}")
+        return redirect('/')
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=True)
