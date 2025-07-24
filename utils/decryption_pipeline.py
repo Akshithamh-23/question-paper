@@ -2,74 +2,71 @@ import os
 import tempfile
 import zipfile
 import traceback
-from cryptography.fernet import Fernet
-from utils.hash_util import calculate_sha256
-from utils.conversion import convert_file_format
-from config import DECRYPTED_FOLDER, KEY_FOLDER
+import hashlib
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import unpad
+from utils.steg_image import extract_file_from_image  # Make sure this is present
+from config import DECRYPTED_FOLDER, UPLOAD_FOLDER
 
-def decrypt_pipeline(encrypted_zip_path, faculty_id):
+def generate_key(faculty_id):
+    return hashlib.sha256(faculty_id.encode()).digest()
+
+def verify_hash(file_path, expected_hash):
+    sha256 = hashlib.sha256()
+    with open(file_path, 'rb') as f:
+        while chunk := f.read(8192):
+            sha256.update(chunk)
+    return sha256.hexdigest() == expected_hash
+
+def decrypt_pipeline(stego_image_path, faculty_id):
     try:
-        base_id = os.path.splitext(faculty_id)[0]
-        key_path = os.path.join(KEY_FOLDER, f"{base_id}.key")
-
-        print(f"🔑 Looking for key at: {key_path}")
-        if not os.path.exists(key_path):
-            return False, f"Key file not found: {key_path}", None
-
-        with open(key_path, "rb") as key_file:
-            key = key_file.read()
-        cipher = Fernet(key)
-
-        decrypted_files = []
+        print("📥 Extracting ZIP from stego image...")
+        zip_path, _ = extract_file_from_image(stego_image_path)  # returns ZIP path
 
         with tempfile.TemporaryDirectory() as tmpdirname:
-            print(f"📦 Extracting ZIP to: {tmpdirname}")
-            with zipfile.ZipFile(encrypted_zip_path, 'r') as zip_ref:
-                zip_ref.extractall(tmpdirname)
+            print(f"📦 Unzipping to: {tmpdirname}")
+            with zipfile.ZipFile(zip_path, 'r') as zipf:
+                zipf.extractall(tmpdirname)
 
-            for root, _, files in os.walk(tmpdirname):
-                for filename in files:
-                    if not filename.endswith(".enc"):
-                        print(f"⚠️ Skipping non-encrypted file: {filename}")
-                        continue
+            enc_file = os.path.join(tmpdirname, 'encrypted_question.enc')
+            hash_file = os.path.join(tmpdirname, 'hash.txt')
+            meta_file = os.path.join(tmpdirname, 'meta.txt')
 
-                    enc_file_path = os.path.join(root, filename)
-                    try:
-                        print(f"🔐 Decrypting file: {enc_file_path}")
-                        with open(enc_file_path, "rb") as enc_file:
-                            encrypted_data = enc_file.read()
+            # Check all required files are present
+            for f in [enc_file, hash_file, meta_file]:
+                if not os.path.exists(f):
+                    return False, f"Missing required file: {f}", None
 
-                        decrypted_data = cipher.decrypt(encrypted_data)
+            with open(meta_file, 'r') as f:
+                original_filename = f.read().strip()
 
-                        output_filename = filename.replace(".enc", "")
-                        output_path = os.path.join(DECRYPTED_FOLDER, output_filename)
-                        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            with open(hash_file, 'r') as f:
+                expected_hash = f.read().strip()
 
-                        with open(output_path, "wb") as dec_file:
-                            dec_file.write(decrypted_data)
+            with open(enc_file, 'rb') as f:
+                encrypted_data = f.read()
 
-                        convert_file_format(output_path)
+            key = generate_key(faculty_id)
+            iv = encrypted_data[:16]
+            ciphertext = encrypted_data[16:]
 
-                        # ✅ ONLY save the filename, not full path
-                        decrypted_files.append(output_filename)
+            cipher = AES.new(key, AES.MODE_CBC, iv)
+            decrypted_data = unpad(cipher.decrypt(ciphertext), AES.block_size)
 
-                        print(f"✅ Decrypted and saved: {output_path}")
+            # Save decrypted file
+            os.makedirs(DECRYPTED_FOLDER, exist_ok=True)
+            decrypted_file_path = os.path.join(DECRYPTED_FOLDER, f"decrypted_{original_filename}")
+            with open(decrypted_file_path, 'wb') as f:
+                f.write(decrypted_data)
 
-                    except Exception as file_error:
-                        print(f"❌ Decryption failed for {filename}: {str(file_error)}")
-                        traceback.print_exc()
-                        return False, f"Decryption failed for {filename}: {str(file_error)}", None
+            # Verify hash
+            if not verify_hash(decrypted_file_path, expected_hash):
+                return False, "Hash mismatch! File may be tampered with.", None
 
-        return True, "Decryption successful.", decrypted_files
+            print(f"✅ Decrypted file saved: {decrypted_file_path}")
+            return True, "Decryption successful.", [f"decrypted_{original_filename}"]
 
     except Exception as e:
-        print("⚠️ Top-level decryption error:")
+        print("❌ Decryption error:")
         traceback.print_exc()
-        return False, f"Error during decryption: {str(e)}", None
-
-
-def decrypt_zip_file(zip_path, faculty_id):
-    success, message, files = decrypt_pipeline(zip_path, faculty_id)
-    if not success:
-        raise Exception(message)
-    return files
+        return False, f"Decryption failed: {str(e)}", None

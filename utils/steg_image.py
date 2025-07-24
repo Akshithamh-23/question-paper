@@ -22,12 +22,11 @@ def extract_file_from_image(stego_image_path):
         byte = int(byte_str, 2)
         data.append(byte)
 
-        # Detect end of embedded data using marker
-        if data.endswith(b'||HASH||'):
-            continue
-
-        if b'||HASH||' in data and len(data.split(b'||HASH||')[1]) > 0:
-            break
+        # Check if we have found the complete marker and some hash data
+        if b'||HASH||' in data:
+            parts = data.split(b'||HASH||', 1)
+            if len(parts) > 1 and len(parts[1]) >= 32:  # Assuming hash is at least 32 chars
+                break
 
     marker = b'||HASH||'
     if marker not in data:

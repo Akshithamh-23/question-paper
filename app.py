@@ -122,7 +122,6 @@ def embed():
 @app.route('/extract', methods=['POST'])
 def extract():
     stego_image = request.files['stego_image']
-    faculty_id = request.form['faculty_id_decrypt']
 
     if not stego_image:
         flash('No stego image uploaded')
@@ -133,7 +132,31 @@ def extract():
 
     try:
         zip_path, hash_value = extract_file_from_image(image_path)
+        import time
+        timestamp = str(int(time.time()))
+        extracted_zip_path = os.path.join(UPLOAD_FOLDER, f'extracted_{timestamp}.zip')
+        os.rename(zip_path, extracted_zip_path)
 
+        flash('Stego image successfully extracted! Now upload this ZIP and your faculty ID to decrypt.')
+        return send_file(extracted_zip_path, as_attachment=True)
+
+    except Exception as e:
+        flash(f"Error during extraction: {str(e)}")
+        return redirect('/')
+
+@app.route('/decrypt', methods=['POST'])
+def decrypt():
+    zip_file = request.files['zip_file']
+    faculty_id = request.form['faculty_id_decrypt']
+
+    if not zip_file:
+        flash('No ZIP file uploaded')
+        return redirect('/')
+
+    zip_path = os.path.join(UPLOAD_FOLDER, secure_filename(zip_file.filename))
+    zip_file.save(zip_path)
+
+    try:
         with zipfile.ZipFile(zip_path, 'r') as zipf:
             zipf.extractall(UPLOAD_FOLDER)
 
@@ -148,8 +171,9 @@ def extract():
 
         flash('Decryption successful! Download the file.')
         return send_file(decrypted_path, as_attachment=True)
+
     except Exception as e:
-        flash(f"Error during extraction or decryption: {str(e)}")
+        flash(f"Error during decryption: {str(e)}")
         return redirect('/')
 
 if __name__ == '__main__':

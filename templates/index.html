@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Steganography-Based Question Paper Security</title>
+    <title>Secure File Transfer System For Question Paper Submission</title>
     <style>
         body { font-family: Arial; padding: 40px; background-color: #f8f9fa; }
         h2 { color: #b30059; }
@@ -18,7 +18,7 @@
     </style>
 </head>
 <body>
-    <h2>Secure Question Paper Portal</h2>
+    <h2>Secure File Transfer System For Question Paper Submission</h2>
 
     {% with messages = get_flashed_messages() %}
         {% if messages %}
@@ -51,27 +51,35 @@
             <label>Upload Encrypted ZIP File:</label>
             <input type="file" name="zip_file" required>
 
-            <label>Upload Cover Image:</label>
+            <label>Upload Cover Image (PNG):</label>
             <input type="file" name="cover_image" required>
-
-            <label>Enter File Hash:</label>
-            <input type="text" name="file_hash" required>
 
             <button type="submit">Embed & Download Stego Image</button>
         </form>
     </div>
 
-    <!-- Step 3: Decrypt from Stego Image -->
+    <!-- Step 3a: Extract ZIP from Stego Image -->
     <div class="section">
-        <h3>Step 3: Extract & Decrypt from Stego Image</h3>
+        <h3>Step 3a: Extract ZIP from Stego Image</h3>
         <form method="POST" action="/extract" enctype="multipart/form-data">
             <label>Upload Stego Image:</label>
             <input type="file" name="stego_image" required>
 
+            <button type="submit">Extract ZIP File</button>
+        </form>
+    </div>
+
+    <!-- Step 3b: Decrypt Question Paper from ZIP -->
+    <div class="section">
+        <h3>Step 3b: Decrypt ZIP using Faculty ID</h3>
+        <form method="POST" action="/decrypt" enctype="multipart/form-data">
             <label>Faculty ID:</label>
             <input type="text" name="faculty_id_decrypt" required>
 
-            <button type="submit">Extract & Decrypt</button>
+            <label>Upload Extracted ZIP File:</label>
+            <input type="file" name="zip_file" required>
+
+            <button type="submit">Decrypt & Download Question Paper</button>
         </form>
     </div>
 </body>
