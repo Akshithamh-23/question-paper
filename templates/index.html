@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Secure File Transfer System For Question Paper Submission</title>
+    <style>
+        body { font-family: Arial; padding: 40px; background-color: #f8f9fa; }
+        h2 { color: #b30059; }
+        .section { margin-bottom: 40px; padding: 20px; border: 1px solid #ccc; border-radius: 8px; background: #fff; }
+        input[type="file"], input[type="text"], button {
+            margin: 10px 0;
+            padding: 10px;
+            width: 100%;
+        }
+        .flash {
+            color: green;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h2>Secure File Transfer System For Question Paper Submission</h2>
+
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div class="flash">
+                {% for message in messages %}
+                    <p>{{ message }}</p>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <!-- Step 1: Encrypt Question Paper -->
+    <div class="section">
+        <h3>Step 1: Upload Faculty ID & Question Paper (Encrypt)</h3>
+        <form method="POST" action="/encrypt" enctype="multipart/form-data">
+            <label>Faculty ID:</label>
+            <input type="text" name="faculty_id" required>
+
+            <label>Original Question Paper (PDF or DOCX):</label>
+            <input type="file" name="question_paper" required>
+
+            <button type="submit">Encrypt & Download ZIP</button>
+        </form>
+    </div>
+
+    <!-- Step 2: Embed ZIP into Image -->
+    <div class="section">
+        <h3>Step 2: Embed ZIP File into Image</h3>
+        <form method="POST" action="/embed" enctype="multipart/form-data">
+            <label>Upload Encrypted ZIP File:</label>
+            <input type="file" name="zip_file" required>
+
+            <label>Upload Cover Image (PNG):</label>
+            <input type="file" name="cover_image" required>
+
+            <button type="submit">Embed & Download Stego Image</button>
+        </form>
+    </div>
+
+    <!-- Step 3a: Extract ZIP from Stego Image -->
+    <div class="section">
+        <h3>Step 3a: Extract ZIP from Stego Image</h3>
+        <form method="POST" action="/extract" enctype="multipart/form-data">
+            <label>Upload Stego Image:</label>
+            <input type="file" name="stego_image" required>
+
+            <button type="submit">Extract ZIP File</button>
+        </form>
+    </div>
+
+    <!-- Step 3b: Decrypt Question Paper from ZIP -->
+    <div class="section">
+        <h3>Step 3b: Decrypt ZIP using Faculty ID</h3>
+        <form method="POST" action="/decrypt" enctype="multipart/form-data">
+            <label>Faculty ID:</label>
+            <input type="text" name="faculty_id_decrypt" required>
+
+            <label>Upload Extracted ZIP File:</label>
+            <input type="file" name="zip_file" required>
+
+            <button type="submit">Decrypt & Download Question Paper</button>
+        </form>
+    </div>
+</body>
+</html>
